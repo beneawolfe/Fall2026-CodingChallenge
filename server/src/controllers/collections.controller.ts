@@ -11,6 +11,7 @@ import {
   requiredString,
 } from "../validation";
 import { toImage } from "./images.controller";
+import { notifyCollectionMembers } from "../services/notifications";
 
 // Convert a database row to the JSON shape the frontend receives
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -112,6 +113,12 @@ export async function updateCollection(req: Request, res: Response) {
      WHERE id = $1
      RETURNING *`,
     [collectionId, name ?? null, description ?? null, isPublic ?? null]
+  );
+    // Tell the collaborators about the change
+  await notifyCollectionMembers(
+    collectionId,
+    getUserId(req),
+    `updated the board "${result.rows[0].name}"`
   );
   res.json({ collection: toCollection(result.rows[0], "owner") });
 }

@@ -6,6 +6,7 @@ import {
   parseId,
   requireCollectionAccess,
 } from "../services/access";
+import { notifyCollectionMembers } from "../services/notifications";
 import { httpUrl, optionalString } from "../validation";
 
 // Convert a database row to the JSON shape the frontend receives
@@ -26,7 +27,11 @@ export function toImage(row: any) {
 export async function addImage(req: Request, res: Response) {
   const collectionId = parseId(req.params.id, "collection id");
   const userId = getUserId(req);
-  await requireCollectionAccess(collectionId, userId, "editor");
+  const { collection } = await requireCollectionAccess(
+    collectionId,
+    userId,
+    "editor"
+  );
 
   const body = req.body ?? {};
   const imageUrl = httpUrl(body.imageUrl, "imageUrl");
@@ -40,6 +45,11 @@ export async function addImage(req: Request, res: Response) {
        VALUES ($1, $2, $3, $4, $5, $6)
        RETURNING *`,
       [collectionId, userId, imageUrl, previewUrl, tags, note]
+    );
+    await notifyCollectionMembers(
+      collectionId,
+      userId,
+      `added an image to "${collection.name}"`
     );
     res.status(201).json({ image: toImage(result.rows[0]) });
   } catch (err) {
@@ -55,7 +65,12 @@ export async function addImage(req: Request, res: Response) {
 export async function updateImage(req: Request, res: Response) {
   const collectionId = parseId(req.params.id, "collection id");
   const imageId = parseId(req.params.imageId, "image id");
-  await requireCollectionAccess(collectionId, getUserId(req), "editor");
+  const userId = getUserId(req);
+  const { collection } = await requireCollectionAccess(
+    collectionId,
+    userId,
+    "editor"
+  );
 
   const tags = optionalString(req.body?.tags, "tags", 500);
   const note = optionalString(req.body?.note, "note", 1000);
@@ -71,6 +86,12 @@ export async function updateImage(req: Request, res: Response) {
   if (!result.rows[0]) {
     throw new HttpError(404, "Image not found");
   }
+
+  await notifyCollectionMembers(
+    collectionId,
+    userId,
+    `edited an image in "${collection.name}"`
+  );
   res.json({ image: toImage(result.rows[0]) });
 }
 
@@ -78,7 +99,12 @@ export async function updateImage(req: Request, res: Response) {
 export async function deleteImage(req: Request, res: Response) {
   const collectionId = parseId(req.params.id, "collection id");
   const imageId = parseId(req.params.imageId, "image id");
-  await requireCollectionAccess(collectionId, getUserId(req), "editor");
+  const userId = getUserId(req);
+  const { collection } = await requireCollectionAccess(
+    collectionId,
+    userId,
+    "editor"
+  );
 
   const result = await pool.query(
     "DELETE FROM images WHERE id = $1 AND collection_id = $2 RETURNING id",
@@ -87,5 +113,11 @@ export async function deleteImage(req: Request, res: Response) {
   if (!result.rows[0]) {
     throw new HttpError(404, "Image not found");
   }
+
+  await notifyCollectionMembers(
+    collectionId,
+    userId,
+    `removed an image from "${collection.name}"`
+  );
   res.status(204).send();
 }

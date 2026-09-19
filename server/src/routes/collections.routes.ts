@@ -11,6 +11,13 @@ import {
   deleteImage,
   updateImage,
 } from "../controllers/images.controller";
+import {
+  addMember,
+  listMembers,
+  removeMember,
+  updateMember,
+} from "../controllers/members.controller";
+import { regenerateShareToken } from "../controllers/share.controller";
 import { requireAuth } from "../middleware/auth";
 
 const router = Router();
@@ -27,5 +34,12 @@ router.delete("/:id", deleteCollection);
 router.post("/:id/images", addImage);
 router.patch("/:id/images/:imageId", updateImage);
 router.delete("/:id/images/:imageId", deleteImage);
+
+router.get("/:id/members", listMembers);
+router.post("/:id/members", addMember);
+router.patch("/:id/members/:userId", updateMember);
+router.delete("/:id/members/:userId", removeMember);
+
+router.post("/:id/share-token", regenerateShareToken);
 
 export default router;
