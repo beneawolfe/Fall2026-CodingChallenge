@@ -7,6 +7,7 @@ import collectionRoutes from "./routes/collections.routes";
 import notificationRoutes from "./routes/notifications.routes";
 import shareRoutes from "./routes/share.routes";
 import { errorHandler } from "./middleware/errorHandler";
+import searchRoutes from './routes/search.routes.js';
 
 const app = express();
 
@@ -34,6 +35,7 @@ app.use("/api/auth", authRoutes);
 app.use("/api/collections", collectionRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/share", shareRoutes);
+app.use('/api/search', searchRoutes);
 
 // Must be registered after all routes
 app.use(errorHandler);

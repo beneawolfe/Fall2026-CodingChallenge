@@ -13,5 +13,6 @@ export const config = {
   port: Number(process.env.PORT ?? 5001),
   clientOrigin: process.env.CLIENT_ORIGIN ?? "http://localhost:5173",
   jwtSecret: requireEnv("JWT_SECRET"),
+    pixabayApiKey: process.env.PIXABAY_API_KEY ?? '',
   jwtExpiresIn: "7d" as const,
 };
