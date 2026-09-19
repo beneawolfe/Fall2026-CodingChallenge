@@ -16,3 +16,20 @@ export interface AuthResponse {
 export interface ApiErrorBody {
   error: string;
 }
+
+// One entry from GET /api/notifications.
+// Named AppNotification to avoid clashing with the browser's built-in Notification type.
+export interface AppNotification {
+  id: number;
+  collectionId: number | null;
+  collectionName: string | null;
+  message: string;
+  isRead: boolean;
+  createdAt: string;
+}
+
+// Response body of GET /api/notifications
+export interface NotificationsResponse {
+  unreadCount: number;
+  notifications: AppNotification[];
+}
