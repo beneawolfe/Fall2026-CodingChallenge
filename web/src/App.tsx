@@ -1,19 +1,29 @@
-import { useEffect, useState } from "react";
+// Top-level route table.
+// - GuestOnly routes (login/register) redirect away if you're already signed in.
+// - RequireAuth routes redirect to /login if you're not.
+// More routes (boards, search, share) are added in later steps.
 
-function App() {
-  const [message, setMessage] = useState("Loading...");
+import { Route, Routes } from 'react-router-dom';
+import GuestOnly from './components/GuestOnly';
+import RequireAuth from './components/RequireAuth';
+import BoardsPage from './pages/BoardsPage';
+import LoginPage from './pages/LoginPage';
+import NotFoundPage from './pages/NotFoundPage';
+import RegisterPage from './pages/RegisterPage';
 
-  useEffect(() => {
-    // async/await so we wait for the response before updating state
-    const fetchHello = async () => {
-      const res = await fetch("http://localhost:5001/api/hello");
-      const data = await res.json();
-      setMessage(data.message);
-    };
-    fetchHello().catch(() => setMessage("Could not reach server"));
-  }, []);
+export default function App() {
+  return (
+    <Routes>
+      <Route element={<GuestOnly />}>
+        <Route path="/login" element={<LoginPage />} />
+        <Route path="/register" element={<RegisterPage />} />
+      </Route>
 
-  return <h1>{message}</h1>;
+      <Route element={<RequireAuth />}>
+        <Route index element={<BoardsPage />} />
+      </Route>
+
+      <Route path="*" element={<NotFoundPage />} />
+    </Routes>
+  );
 }
-
-export default App;
