@@ -1,13 +1,14 @@
-import "dotenv/config";
 import express from "express";
 import cors from "cors";
+import { config } from "./config";
 import { pool } from "./db/pool";
+import authRoutes from "./routes/auth.routes";
+import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
-const PORT = process.env.PORT ?? 5001;
 
 // Allow the Vite dev server to call this API
-app.use(cors({ origin: "http://localhost:5173" }));
+app.use(cors({ origin: config.clientOrigin }));
 app.use(express.json());
 
 // Health-check route to confirm frontend <-> backend connection
@@ -26,6 +27,11 @@ app.get("/api/db-check", async (_req, res) => {
   }
 });
 
-app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+app.use("/api/auth", authRoutes);
+
+// Must be registered after all routes
+app.use(errorHandler);
+
+app.listen(config.port, () => {
+  console.log(`Server running on http://localhost:${config.port}`);
 });
