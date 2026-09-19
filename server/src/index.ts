@@ -3,6 +3,7 @@ import cors from "cors";
 import { config } from "./config";
 import { pool } from "./db/pool";
 import authRoutes from "./routes/auth.routes";
+import collectionRoutes from "./routes/collections.routes";
 import { errorHandler } from "./middleware/errorHandler";
 
 const app = express();
@@ -28,6 +29,7 @@ app.get("/api/db-check", async (_req, res) => {
 });
 
 app.use("/api/auth", authRoutes);
+app.use("/api/collections", collectionRoutes);
 
 // Must be registered after all routes
 app.use(errorHandler);
