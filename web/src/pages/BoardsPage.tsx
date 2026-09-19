@@ -1,322 +1,170 @@
-// Board detail page: Pinterest-style image grid with edit/remove, a
-// public/private switch and a copyable share link (owner only).
-// Removing an image and toggling public/private are optimistic: the UI
-// updates immediately and rolls back if the server rejects the change.
+// "My Boards" home page: boards you own, boards shared with you, plus dialogs
+// for creating, editing, deleting, and leaving boards.
 
-import { useEffect, useState } from 'react';
-import { Link as RouterLink, useParams } from 'react-router-dom';
-import {
-  Alert,
-  Box,
-  Button,
-  Chip,
-  Dialog,
-  DialogActions,
-  DialogContent,
-  DialogTitle,
-  FormControlLabel,
-  IconButton,
-  Paper,
-  Skeleton,
-  Snackbar,
-  Stack,
-  Switch,
-  TextField,
-  Typography,
-} from '@mui/material';
-import ArrowBackIcon from '@mui/icons-material/ArrowBack';
-import ContentCopyIcon from '@mui/icons-material/ContentCopy';
-import DeleteIcon from '@mui/icons-material/DeleteOutlined';
-import EditIcon from '@mui/icons-material/EditOutlined';
-import { fetchBoard, updateBoard } from '../api/collections';
-import { deleteImage, updateImage } from '../api/images';
-import type { Board } from '../types/board';
-import type { BoardImage } from '../types/image';
+import { useState } from 'react';
+import type { ReactNode } from 'react';
+import { Alert, Box, Button, Typography } from '@mui/material';
+import AddIcon from '@mui/icons-material/Add';
+import AddPhotoAlternateIcon from '@mui/icons-material/AddPhotoAlternateOutlined';
+import BoardCard from '../components/BoardCard';
+import BoardCardSkeleton from '../components/BoardCardSkeleton';
+import BoardFormDialog from '../components/BoardFormDialog';
+import ConfirmDialog from '../components/ConfirmDialog';
+import EmptyState from '../components/EmptyState';
+import { useBoards } from '../hooks/useBoards';
+import { useToast } from '../hooks/useToast';
+import type { Board, BoardInput } from '../types/board';
 
-function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : 'Something went wrong';
+type FormState = { mode: 'create' } | { mode: 'edit'; board: Board } | null;
+type ConfirmState = { kind: 'delete' | 'leave'; board: Board } | null;
+
+// Responsive grid: as many 260px+ columns as fit, so phones get one column
+function BoardGrid({ children }: { children: ReactNode }) {
+  return (
+    <Box sx={{ display: 'grid', gap: 3, gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))' }}>
+      {children}
+    </Box>
+  );
 }
 
-export default function BoardPage() {
-  const { boardId } = useParams();
-  const id = Number(boardId);
+export default function BoardsPage() {
+  const { showToast } = useToast();
+  const { boards, loading, error, retry, createBoard, updateBoard, removeBoard, leaveBoard } = useBoards();
+  const [form, setForm] = useState<FormState>(null);
+  const [confirm, setConfirm] = useState<ConfirmState>(null);
 
-  const [board, setBoard] = useState<Board | null>(null);
-  const [images, setImages] = useState<BoardImage[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [loadError, setLoadError] = useState<string | null>(null);
-  const [toast, setToast] = useState<{ message: string; severity: 'success' | 'error' } | null>(
-    null,
-  );
+  const owned = boards.filter((board) => board.role === 'owner');
+  const shared = boards.filter((board) => board.role !== 'owner');
 
-  // Edit-image dialog state
-  const [editing, setEditing] = useState<BoardImage | null>(null);
-  const [tagsDraft, setTagsDraft] = useState('');
-  const [noteDraft, setNoteDraft] = useState('');
-  const [saving, setSaving] = useState(false);
+  // Called by the dialog; throws on failure so the dialog can show the error
+  async function handleFormSubmit(input: BoardInput) {
+    if (form?.mode === 'edit') {
+      await updateBoard(form.board.id, input);
+      showToast('Board updated', 'success');
+    } else {
+      await createBoard(input);
+      showToast('Board created', 'success');
+    }
+  }
 
-  useEffect(() => {
-    let cancelled = false;
-    fetchBoard(id)
-      .then((data) => {
-        if (cancelled) return;
-        setBoard(data.board);
-        setImages(data.images);
-      })
-      .catch((err) => {
-        if (!cancelled) setLoadError(errorMessage(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [id]);
+  async function handleConfirm() {
+    if (!confirm) return;
+    const { kind, board } = confirm;
+    setConfirm(null);
 
-  const canEdit = board !== null && board.role !== 'viewer';
-  const isOwner = board?.role === 'owner';
-
-  // Optimistic remove: hide the image now, put it back if the server fails.
-  async function handleRemove(image: BoardImage) {
-    const previous = images;
-    setImages((current) => current.filter((i) => i.id !== image.id));
     try {
-      await deleteImage(id, image.id);
+      if (kind === 'delete') {
+        await removeBoard(board.id);
+        showToast(`Deleted "${board.name}"`, 'success');
+      } else {
+        await leaveBoard(board.id);
+        showToast(`Left "${board.name}"`, 'success');
+      }
     } catch (err) {
-      setImages(previous);
-      setToast({ message: `Couldn't remove image: ${errorMessage(err)}`, severity: 'error' });
+      // The hook already rolled the card back into the list
+      showToast(err instanceof Error ? err.message : 'Something went wrong', 'error');
     }
   }
 
-  // Optimistic public/private toggle with rollback.
-  async function handleTogglePublic(next: boolean) {
-    if (!board) return;
-    const previous = board;
-    setBoard({ ...board, isPublic: next });
-    try {
-      await updateBoard(board.id, {
-        name: board.name,
-        description: board.description,
-        isPublic: next,
-      });
-    } catch (err) {
-      setBoard(previous);
-      setToast({ message: `Couldn't update board: ${errorMessage(err)}`, severity: 'error' });
-    }
-  }
-
-  function openEdit(image: BoardImage) {
-    setEditing(image);
-    setTagsDraft(image.tags);
-    setNoteDraft(image.note);
-  }
-
-  async function handleSaveEdit() {
-    if (!editing) return;
-    setSaving(true);
-    try {
-      const updated = await updateImage(id, editing.id, { tags: tagsDraft, note: noteDraft });
-      setImages((current) => current.map((i) => (i.id === updated.id ? updated : i)));
-      setEditing(null);
-    } catch (err) {
-      setToast({ message: `Couldn't save changes: ${errorMessage(err)}`, severity: 'error' });
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  async function handleCopyLink() {
-    if (!board?.shareToken) return;
-    const link = `${window.location.origin}/share/${board.shareToken}`;
-    try {
-      await navigator.clipboard.writeText(link);
-      setToast({ message: 'Share link copied to clipboard', severity: 'success' });
-    } catch {
-      setToast({ message: `Copy failed. Link: ${link}`, severity: 'error' });
-    }
-  }
-
-  if (loading) {
-    return (
-      <Box>
-        <Skeleton variant="text" width={240} height={48} />
-        <Box sx={{ columnCount: { xs: 2, sm: 3, md: 4 }, columnGap: 2, mt: 2 }}>
-          {[180, 260, 220, 300, 200, 240, 280, 210].map((h, i) => (
-            <Skeleton key={i} variant="rounded" height={h} sx={{ mb: 2 }} />
-          ))}
-        </Box>
-      </Box>
-    );
-  }
-
-  if (loadError || !board) {
-    return (
-      <Stack spacing={2} alignItems="flex-start">
-        <Alert severity="error">{loadError ?? 'Board not found'}</Alert>
-        <Button component={RouterLink} to="/" startIcon={<ArrowBackIcon />}>
-          Back to my boards
-        </Button>
-      </Stack>
-    );
+  function renderCards(list: Board[]) {
+    return list.map((board) => (
+      <BoardCard
+        key={board.id}
+        board={board}
+        onEdit={(b) => setForm({ mode: 'edit', board: b })}
+        onDelete={(b) => setConfirm({ kind: 'delete', board: b })}
+        onLeave={(b) => setConfirm({ kind: 'leave', board: b })}
+      />
+    ));
   }
 
   return (
-    <Box>
-      <Button component={RouterLink} to="/" startIcon={<ArrowBackIcon />} sx={{ mb: 1 }}>
-        My boards
-      </Button>
+    <>
+      {/* Header */}
+      <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 2, mb: 3, flexWrap: 'wrap' }}>
+        <Typography variant="h4" component="h1">
+          My Boards
+        </Typography>
+        <Button variant="contained" startIcon={<AddIcon />} onClick={() => setForm({ mode: 'create' })}>
+          New board
+        </Button>
+      </Box>
 
-      <Stack
-        direction={{ xs: 'column', sm: 'row' }}
-        justifyContent="space-between"
-        alignItems={{ xs: 'flex-start', sm: 'center' }}
-        spacing={2}
-        sx={{ mb: 3 }}
-      >
-        <Box>
-          <Typography variant="h4" component="h1">
-            {board.name}
-          </Typography>
-          {board.description && (
-            <Typography color="text.secondary">{board.description}</Typography>
-          )}
-          <Stack direction="row" spacing={1} sx={{ mt: 1 }}>
-            <Chip size="small" label={board.role} />
-            <Chip size="small" variant="outlined" label={`by ${board.ownerUsername}`} />
-            <Chip
-              size="small"
-              color={board.isPublic ? 'success' : 'default'}
-              label={board.isPublic ? 'Public' : 'Private'}
-            />
-          </Stack>
-        </Box>
-
-        {isOwner && (
-          <Paper variant="outlined" sx={{ p: 1.5 }}>
-            <Stack spacing={1}>
-              <FormControlLabel
-                control={
-                  <Switch
-                    checked={board.isPublic}
-                    onChange={(e) => handleTogglePublic(e.target.checked)}
-                  />
-                }
-                label="Public board"
-              />
-              <Button
-                size="small"
-                startIcon={<ContentCopyIcon />}
-                onClick={handleCopyLink}
-                disabled={!board.shareToken}
-              >
-                Copy share link
-              </Button>
-            </Stack>
-          </Paper>
-        )}
-      </Stack>
-
-      {images.length === 0 ? (
-        <Paper variant="outlined" sx={{ p: 4, textAlign: 'center' }}>
-          <Typography variant="h6">No images yet</Typography>
-          <Typography color="text.secondary" sx={{ mb: 2 }}>
-            Search for images and save them to this board.
-          </Typography>
-          {canEdit && (
-            <Button component={RouterLink} to="/search" variant="contained">
-              Search images
-            </Button>
-          )}
-        </Paper>
-      ) : (
-        // CSS columns give a Pinterest-style masonry layout with no extra library.
-        <Box sx={{ columnCount: { xs: 2, sm: 3, md: 4 }, columnGap: 2 }}>
-          {images.map((image) => (
-            <Paper
-              key={image.id}
-              variant="outlined"
-              sx={{ mb: 2, breakInside: 'avoid', overflow: 'hidden' }}
-            >
-              <Box
-                component="img"
-                src={image.previewUrl}
-                alt={image.note || image.tags || 'Saved image'}
-                loading="lazy"
-                sx={{ display: 'block', width: '100%', height: 'auto' }}
-              />
-              {(image.note || image.tags || canEdit) && (
-                <Box sx={{ p: 1 }}>
-                  {image.note && <Typography variant="body2">{image.note}</Typography>}
-                  {image.tags && (
-                    <Typography variant="caption" color="text.secondary">
-                      {image.tags}
-                    </Typography>
-                  )}
-                  {canEdit && (
-                    <Stack direction="row" justifyContent="flex-end">
-                      <IconButton
-                        size="small"
-                        aria-label="Edit image"
-                        onClick={() => openEdit(image)}
-                      >
-                        <EditIcon fontSize="small" />
-                      </IconButton>
-                      <IconButton
-                        size="small"
-                        aria-label="Remove image"
-                        onClick={() => handleRemove(image)}
-                      >
-                        <DeleteIcon fontSize="small" />
-                      </IconButton>
-                    </Stack>
-                  )}
-                </Box>
-              )}
-            </Paper>
+      {/* Body: loading, error, empty, or the grids */}
+      {loading ? (
+        <BoardGrid>
+          {Array.from({ length: 6 }, (_, index) => (
+            <BoardCardSkeleton key={index} />
           ))}
+        </BoardGrid>
+      ) : error ? (
+        <Alert
+          severity="error"
+          action={
+            <Button color="inherit" size="small" onClick={retry}>
+              Retry
+            </Button>
+          }
+        >
+          {error}
+        </Alert>
+      ) : boards.length === 0 ? (
+        <EmptyState
+          icon={<AddPhotoAlternateIcon />}
+          title="No boards yet"
+          message="Boards are where you collect the images you love. Create your first one to get started."
+          action={
+            <Button variant="contained" startIcon={<AddIcon />} onClick={() => setForm({ mode: 'create' })}>
+              Create a board
+            </Button>
+          }
+        />
+      ) : (
+        <Box sx={{ display: 'grid', gap: 4 }}>
+          {owned.length > 0 && (
+            <Box>
+              {shared.length > 0 && (
+                <Typography variant="h6" sx={{ mb: 2 }}>
+                  Your boards
+                </Typography>
+              )}
+              <BoardGrid>{renderCards(owned)}</BoardGrid>
+            </Box>
+          )}
+
+          {shared.length > 0 && (
+            <Box>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                Shared with me
+              </Typography>
+              <BoardGrid>{renderCards(shared)}</BoardGrid>
+            </Box>
+          )}
         </Box>
       )}
 
-      <Dialog open={editing !== null} onClose={() => setEditing(null)} fullWidth maxWidth="xs">
-        <DialogTitle>Edit image</DialogTitle>
-        <DialogContent>
-          <Stack spacing={2} sx={{ pt: 1 }}>
-            <TextField
-              label="Note"
-              value={noteDraft}
-              onChange={(e) => setNoteDraft(e.target.value)}
-              multiline
-              minRows={2}
-              fullWidth
-            />
-            <TextField
-              label="Tags (comma separated)"
-              value={tagsDraft}
-              onChange={(e) => setTagsDraft(e.target.value)}
-              fullWidth
-            />
-          </Stack>
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setEditing(null)}>Cancel</Button>
-          <Button variant="contained" onClick={handleSaveEdit} disabled={saving}>
-            {saving ? 'Saving...' : 'Save'}
-          </Button>
-        </DialogActions>
-      </Dialog>
+      {/* Dialogs */}
+      {form && (
+        <BoardFormDialog
+          key={form.mode === 'edit' ? form.board.id : 'new'}
+          board={form.mode === 'edit' ? form.board : undefined}
+          onClose={() => setForm(null)}
+          onSubmit={handleFormSubmit}
+        />
+      )}
 
-      <Snackbar
-        open={toast !== null}
-        autoHideDuration={4000}
-        onClose={() => setToast(null)}
-      >
-        {toast ? (
-          <Alert severity={toast.severity} onClose={() => setToast(null)}>
-            {toast.message}
-          </Alert>
-        ) : undefined}
-      </Snackbar>
-    </Box>
+      <ConfirmDialog
+        open={confirm !== null}
+        title={confirm?.kind === 'delete' ? 'Delete this board?' : 'Leave this board?'}
+        message={
+          confirm?.kind === 'delete'
+            ? `"${confirm.board.name}" and all of its saved images will be permanently deleted for everyone.`
+            : `You'll lose access to "${confirm?.board.name}" until the owner adds you again.`
+        }
+        confirmLabel={confirm?.kind === 'delete' ? 'Delete' : 'Leave'}
+        onConfirm={() => void handleConfirm()}
+        onCancel={() => setConfirm(null)}
+      />
+    </>
   );
 }

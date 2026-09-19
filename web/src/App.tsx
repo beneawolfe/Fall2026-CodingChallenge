@@ -2,18 +2,19 @@
 // - GuestOnly routes (login/register) redirect away if you're already signed in.
 // - RequireAuth routes redirect to /login if you're not.
 // - AppLayout wraps every logged-in page with the top bar.
-// More routes (board detail, public share) are added in later steps.
+// - /share/:token is public: anyone with the link can view, no login needed.
 
 import { Route, Routes } from 'react-router-dom';
 import AppLayout from './components/AppLayout';
 import GuestOnly from './components/GuestOnly';
 import RequireAuth from './components/RequireAuth';
+import BoardPage from './pages/BoardPage';
 import BoardsPage from './pages/BoardsPage';
 import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
 import RegisterPage from './pages/RegisterPage';
 import SearchPage from './pages/SearchPage';
-import BoardPage from './pages/BoardPage';
+import SharePage from './pages/SharePage';
 
 export default function App() {
   return (
@@ -22,6 +23,8 @@ export default function App() {
         <Route path="/login" element={<LoginPage />} />
         <Route path="/register" element={<RegisterPage />} />
       </Route>
+
+      <Route path="/share/:token" element={<SharePage />} />
 
       <Route element={<RequireAuth />}>
         <Route element={<AppLayout />}>
