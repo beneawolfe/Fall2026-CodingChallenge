@@ -1,5 +1,6 @@
 // Board detail page: Pinterest-style image grid with edit/remove, a
-// public/private switch and a copyable share link (owner only).
+// public/private switch, a copyable share link and a collaborators dialog
+// (owner only).
 // Removing an image and toggling public/private are optimistic: the UI
 // updates immediately and rolls back if the server rejects the change.
 
@@ -28,6 +29,8 @@ import ArrowBackIcon from '@mui/icons-material/ArrowBack';
 import ContentCopyIcon from '@mui/icons-material/ContentCopy';
 import DeleteIcon from '@mui/icons-material/DeleteOutlined';
 import EditIcon from '@mui/icons-material/EditOutlined';
+import GroupAddIcon from '@mui/icons-material/GroupAddOutlined';
+import CollaboratorsDialog from '../components/CollaboratorsDialog';
 import { fetchBoard, updateBoard } from '../api/collections';
 import { deleteImage, updateImage } from '../api/images';
 import type { Board } from '../types/board';
@@ -54,6 +57,9 @@ export default function BoardPage() {
   const [tagsDraft, setTagsDraft] = useState('');
   const [noteDraft, setNoteDraft] = useState('');
   const [saving, setSaving] = useState(false);
+
+  // Collaborators dialog state
+  const [collabOpen, setCollabOpen] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -152,7 +158,7 @@ export default function BoardPage() {
 
   if (loadError || !board) {
     return (
-      <Stack spacing={2} alignItems="flex-start">
+      <Stack spacing={2} sx={{ alignItems: 'flex-start' }}>
         <Alert severity="error">{loadError ?? 'Board not found'}</Alert>
         <Button component={RouterLink} to="/" startIcon={<ArrowBackIcon />}>
           Back to my boards
@@ -169,10 +175,12 @@ export default function BoardPage() {
 
       <Stack
         direction={{ xs: 'column', sm: 'row' }}
-        justifyContent="space-between"
-        alignItems={{ xs: 'flex-start', sm: 'center' }}
         spacing={2}
-        sx={{ mb: 3 }}
+        sx={{
+          mb: 3,
+          justifyContent: 'space-between',
+          alignItems: { xs: 'flex-start', sm: 'center' },
+        }}
       >
         <Box>
           <Typography variant="h4" component="h1">
@@ -211,6 +219,9 @@ export default function BoardPage() {
                 disabled={!board.shareToken}
               >
                 Copy share link
+              </Button>
+              <Button size="small" startIcon={<GroupAddIcon />} onClick={() => setCollabOpen(true)}>
+                Collaborators
               </Button>
             </Stack>
           </Paper>
@@ -254,7 +265,7 @@ export default function BoardPage() {
                     </Typography>
                   )}
                   {canEdit && (
-                    <Stack direction="row" justifyContent="flex-end">
+                    <Stack direction="row" sx={{ justifyContent: 'flex-end' }}>
                       <IconButton
                         size="small"
                         aria-label="Edit image"
@@ -305,6 +316,14 @@ export default function BoardPage() {
           </Button>
         </DialogActions>
       </Dialog>
+
+      {isOwner && (
+        <CollaboratorsDialog
+          open={collabOpen}
+          boardId={board.id}
+          onClose={() => setCollabOpen(false)}
+        />
+      )}
 
       <Snackbar
         open={toast !== null}

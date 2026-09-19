@@ -13,6 +13,7 @@ import LoginPage from './pages/LoginPage';
 import NotFoundPage from './pages/NotFoundPage';
 import RegisterPage from './pages/RegisterPage';
 import SearchPage from './pages/SearchPage';
+import BoardPage from './pages/BoardPage';
 
 export default function App() {
   return (
@@ -26,6 +27,7 @@ export default function App() {
         <Route element={<AppLayout />}>
           <Route index element={<BoardsPage />} />
           <Route path="search" element={<SearchPage />} />
+          <Route path="boards/:boardId" element={<BoardPage />} />
         </Route>
       </Route>
 
